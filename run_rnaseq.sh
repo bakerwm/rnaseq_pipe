@@ -23,15 +23,16 @@
 
 
 
-# Global Variables
-N_CPU=8
-GENOME=hg38 # mm10, hg38, dm6
-BIN_SIZE=50 # for bigWig files
-NORM_BY="CPM" # for bigWig
-GENOME_DIR="${HOME}/data/genome"
+## Global Variables
+[[ -z ${N_CPU} ]] && N_CPU=8
+[[ -z ${GENOME} ]] && GENOME=hg38 # mm10, hg38, dm6
+[[ -z ${BIN_SIZE} ]] && BIN_SIZE=50 # for bigWig files
+[[ -z ${NORM_BY} ]] && NORM_BY="CPM" # for bigWig
+[[ -z ${GENOME_DIR} ]] && GENOME_DIR="${HOME}/data/genome"
 SRC_DIR=$(dirname $0) # script dir
 RUN_SALMON="${SRC_DIR}/run_salmon.sh"
 GB_COV="${SRC_DIR}/genebody_cov.sh"
+
 
 ## Genome info for featureCounts
 function get_gtf() {
@@ -148,21 +149,23 @@ function quant() {
     local bam=$3
     local bname=$(basename ${bam%.bam})
     # gtf=$1
-    local gtf=$(get_gtf ${genome} exon)
+    local group="exon"
+    local gtf=$(get_gtf ${genome} ${group})
     ## parameters: paired-end
     [[ ! -d ${out_dir} ]] && mkdir -p ${out_dir}
     out_dir=$(realpath -s ${out_dir})
     bam=$(realpath -s ${bam})
     local para="-p -T ${N_CPU} -M -O --fraction -F GTF -t gene -g gene_id"
     local cmd="${out_dir}/${bname}.cmd.sh"
+    local prefix="${out_dir}/${bname}.${group}"
     ## sense
-    local quant_sens="${out_dir}/${bname}.sens.txt"
-    local quant_log_sens="${out_dir}/${bname}.sens.featureCounts.stderr"
+    local quant_sens="${prefix}.sens.txt"
+    local quant_log_sens="${prefix}.sens.featureCounts.stderr"
     [[ -f ${quant_sens} ]] && tag_sens="# " || tag_sens=""
     cmd_sens="${tag_sens}featureCounts -s 1 ${para} -a ${gtf} -o ${quant_sens} ${bam} 2> ${quant_log_sens}"
     ## anti
-    local quant_anti="${out_dir}/${bname}.anti.txt"
-    local quant_log_anti="${out_dir}/${bname}.anti.featureCounts.stderr"
+    local quant_anti="${prefix}.anti.txt"
+    local quant_log_anti="${prefix}.anti.featureCounts.stderr"
     [[ -f ${quant_anti} ]] && tag_anti="# " || tag_anti=""
     cmd_anti="${tag_anti}featureCounts -s 2 ${para} -a ${gtf} -o ${quant_anti} ${bam} 2> ${quant_log_anti}"
     # save to cmd
@@ -205,6 +208,7 @@ function run_rnaseq() {
     ## 1. trim reads
     # read1: cut 7  (before trim)
     # read2: cut -7 (after trim)
+    echo "[1/10] - trimming adapters"
     local raw_dir=$(dirname ${fq1})
     local clean_dir="${wk_dir}/results/00.clean_data"
     ## hiseq trim -n 4 -a CTGTCTCTTATACACATCT -A AGATCGGAAGAGCGTCGTG -p ${N_CPU} -j 1 --cut-after-trim 7,-7 -m 20 -o ${clean_dir} -1 ${fq1} -2 ${fq2}
@@ -215,6 +219,7 @@ function run_rnaseq() {
     local clean_fq2="${clean_dir}/${fq_name}/${fq_name}_2.fq.gz"
 
     ## 2. align to genome, using STAR
+    echo "[2/10] - mapping (STAR)"
     local align_dir="${wk_dir}/results/01.align"
     local bam_star="${align_dir}/${fq_name}/${fq_name}.bam"
     [[ ! -f ${bam_star} ]] && \
@@ -222,6 +227,7 @@ function run_rnaseq() {
     [[ ! -f ${bam_star} ]] && echo "    [error] - bam not file found"
 
     ## 3. prepare bam files
+    echo "[3/10] - copy bam files"
     local bam_dir="${wk_dir}/results/02.bam_files"
     local bam="${bam_dir}/${fq_name}.bam"
     local bam_star_rel=$(realpath --relative-to=${bam_dir} $(dirname ${bam_star}))
@@ -230,26 +236,32 @@ function run_rnaseq() {
     [[ ! -f ${bam}.bai ]] && samtools index -@ {N_CPU} ${bam}
 
     ## 4. prepare bw files
+    echo "[4/10] - generating bigWig files"
     local bw_dir="${wk_dir}/results/03.bw_files"
     bam2bw ${bw_dir} ${bam} ${GENOME}
 
     ## 5. annotation bam files
+    echo "[5/10] - annotation (Picard)"
     local anno_dir="${wk_dir}/results/04.anno/picard"
     anno ${anno_dir} ${bam}
 
     ## 6. quant
+    echo "[6/10] - quantifying sens,anti reads"
     local quant_dir="${wk_dir}/results/05.quant"
     quant ${quant_dir} ${GENOME} ${bam}
 
     ## 7. genebody coverage
+    echo "[7/10] - generating genebody coverage (RSeQC), skipped ..."
     local gb_dir="${wk_dir}/results/06.genebody_cov"
-    bash ${GB_COV} ${gb_dir} ${GENOME} 1 ${bam}
+    # bash ${GB_COV} ${gb_dir} ${GENOME} 1 ${bam}
 
     ## 8. quant, TPM, gene_count, salmon
+    echo "[8/10] - mapping (Salmon)"
     local salmon_dir="${wk_dir}/results/07.RNAseq_salmon"
     run_salmon ${salmon_dir} ${GENOME} ${clean_fq1} ${clean_fq2}
 
     ## 9. subsample: 0.1M to 1M reads by 0.2M step
+    echo "[9/10] - subset reads by 0.1 to 1.0 M"
     local sub_dir="${wk_dir}/results/08.sub_data"
     for i in 100000 200000 400000 600000 800000 1000000
     do
@@ -264,7 +276,7 @@ function run_rnaseq() {
         run_salmon ${sub_align_dir} ${GENOME} ${sub_fq1} ${sub_fq2}
     done
     
-    echo "finished!"
+    echo "[10/10] - finished!"
 }
 export -f run_rnaseq
 

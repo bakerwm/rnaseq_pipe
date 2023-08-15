@@ -1,0 +1,19 @@
+
+#########################################################################
+## custom parameters
+#########################################################################
+N_CPU=8 # CPUs for each job
+N_JOB=1 # run in parallel
+SLURM_PARTITION="CPU2"
+RAW_DIR="/home/wangm/work/2023/rnaseq_xp/20230630_smart_seq_total/test/data/raw_data"
+WK_DIR="/home/wangm/work/2023/rnaseq_xp/20230630_smart_seq_total/test"
+GENOME=hg38 # mm10, hg38, dm6
+BIN_SIZE=50 # for bigWig files
+NORM_BY="CPM" # for bigWig
+GENOME_DIR="${HOME}/data/genome"
+
+#########################################################################
+## Paths and Settings  - Do not edit !
+#########################################################################
+salmon="/data1/yuyang/wangm/biosoft/salmon/current/bin/salmon"
+
