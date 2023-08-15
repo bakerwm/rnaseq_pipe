@@ -1,16 +1,22 @@
 
 #########################################################################
-## custom parameters
+## custom parameters; PATH should be ABSOLUTE_PATH
 #########################################################################
-N_CPU=8 # CPUs for each job
+N_CPU=6 # CPUs for each job
 N_JOB=1 # run in parallel
+N_MEM=30000 # memory, MB
 SLURM_PARTITION="CPU2"
-RAW_DIR="/home/wangm/work/2023/rnaseq_xp/20230630_smart_seq_total/test/data/raw_data"
-WK_DIR="/home/wangm/work/2023/rnaseq_xp/20230630_smart_seq_total/test"
+DATA_DIR="/home/wangm/work/demo/data/raw_data"
+WK_DIR="/home/wangm/work/demo"
 GENOME=hg38 # mm10, hg38, dm6
 BIN_SIZE=50 # for bigWig files
 NORM_BY="CPM" # for bigWig
 GENOME_DIR="${HOME}/data/genome"
+
+# Suggest config on IBP-HPC
+# CPU1 N_CPU=6 N_JOB=6 N_MEM=30000 (36C 190G)
+# CPU2 N_CPU=7 N_JOB=8 N_MEM=30000 (56C 256G)
+# CPU3 N_CPU=4 N_JOB=7 N_MEM=30000 (28C 256G)
 
 #########################################################################
 ## Paths and Settings  - Do not edit !
