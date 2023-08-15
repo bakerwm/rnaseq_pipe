@@ -1,3 +1,12 @@
+#!/usr/bin/bash 
+
+# Script: run_rnaseq.sh
+# Author: Ming Wang
+# Version: 1.0
+# Email: wangm08@hotmail.com
+# Date: 2023-08-14
+# 
+# Usage: run_rnaseq.sh <out_dir> <data_dir> <n_job>
 
 # Description
 # 
@@ -19,19 +28,69 @@
 # 9. subsample.  Subsample fastq file by 0.1 to 1.0 M reads, for gene count
 #
 # Directory structure
-#
+# results/
+# ├── 00.clean_data
+# ├── 01.align
+# ├── 02.bam_files
+# ├── 03.bw_files
+# ├── 04.anno
+# ├── 05.quant
+# ├── 06.genebody_cov
+# ├── 07.RNAseq_salmon
+# └── 08.sub_data
 
-
-
-## Global Variables
-[[ -z ${N_CPU} ]] && N_CPU=8
-[[ -z ${GENOME} ]] && GENOME=hg38 # mm10, hg38, dm6
-[[ -z ${BIN_SIZE} ]] && BIN_SIZE=50 # for bigWig files
-[[ -z ${NORM_BY} ]] && NORM_BY="CPM" # for bigWig
-[[ -z ${GENOME_DIR} ]] && GENOME_DIR="${HOME}/data/genome"
+################################################################################
+## Global Variables, parsing from file: ./rnaseq.sh and config.txt
+# source $1 # config
+# # update resources
+# WK_DIR=$(realpath -s ${WK_DIR})
+# DATA_DIR=$(realpath -s ${DATA_DIR})
+# [[ ${N_CPU} =~ ^[0-9]+$ ]] || N_CPU=8
+# [[ ${N_JOB} =~ ^[0-9]+$ ]] || N_JOB=1
+# [[ ${N_MEM} =~ ^[0-9]+$ ]] || N_MEM=30000 # MB, 30GB for Salmon,STAR alignment of hg38
 SRC_DIR=$(dirname $0) # script dir
 RUN_SALMON="${SRC_DIR}/run_salmon.sh"
-GB_COV="${SRC_DIR}/genebody_cov.sh"
+GB_COV="${SRC_DIR}/genebody_cov.sh" # to-do
+################################################################################
+
+
+# load all global variables
+# para: <config>
+function load_config() {
+    [[ -f $1 ]] || return 1
+    source $1 # config
+    # update resources
+    WK_DIR=$(realpath -s ${WK_DIR})
+    DATA_DIR=$(realpath -s ${DATA_DIR})
+    [[ ${N_CPU} =~ ^[0-9]+$ ]] || N_CPU=8
+    [[ ${N_JOB} =~ ^[0-9]+$ ]] || N_JOB=1
+    [[ ${N_MEM} =~ ^[0-9]+$ ]] || N_MEM=30000 # MB, 30GB for Salmon,STAR alignment of hg38
+}
+export -f load_config
+
+
+# list config, global variables
+# para: <>
+function list_config() {
+    # number of fastq files
+    N_FQ=$(ls ${DATA_DIR}/ | grep -c _1.fq) #
+    # show global variables:
+    echo "--------------------------------------------------------------------------------"
+    echo "WK_DIR:          ${WK_DIR}"
+    echo "DATA_DIR:        ${DATA_DIR}"
+    echo "GENOME:          ${GENOME}"
+    echo "GENOME_DIR:      ${GENOME_DIR}"
+    echo "BIN_SIZE:        ${BIN_SIZE}"
+    echo "NORM_BY:         ${NORM_BY}"
+    echo "N_CPU:           ${N_CPU}"
+    echo "N_JOB:           ${N_JOB}"
+    echo "N_MEM (MB):      ${N_MEM}"
+    echo "slurm_partition: ${SLURM_PARTITION}"
+    echo "n fastq files:   ${N_FQ}"
+    echo "--------------------------------------------------------------------------------"
+    echo ""
+}
+export -f list_config
 
 
 ## Genome info for featureCounts
@@ -59,14 +118,41 @@ function fx_prefix() {
 export -f fx_prefix
 
 
+function check_data_dir() {
+    local data_dir=$1
+    # check fq files
+    local n_fq1=$(ls ${data_dir}/ | grep -c _1.fq.gz) #
+    local n_fq2=$(ls ${data_dir}/ | grep -c _2.fq.gz) #
+    if [[ ${n_fq1} -eq ${n_fq2} && ${n_fq1} -gt 0 ]] 
+    then
+        echo "[${n_fq1}] pair(s) of read1/read2 files found: ${data_dir}" && return 0 # pass
+    else
+        [[ ${n_fq1} -eq 0 ]] && echo "[0] no fastq files found: ${data_dir}" && return 1
+        # check unpaired: fq1, fq2
+        for fq1 in ${data_dir}/*_1.fq.gz
+        do
+            fq2="${fq1%_1.fq.gz}_2.fq.gz"
+            [[ ! -f ${fq2} ]] && echo "${fq1} -"
+        done
+        ##
+        for fq2 in ${data_dir}/*_2.fq.gz
+        do
+            fq1="${fq1%_2.fq.gz}_1.fq.gz"
+            [[ ! -f ${fq1} ]] && echo "- ${fq2}"
+        done
+        echo "[error] - above files not matched" && return 1
+    fi
+}
+export -f check_data_dir
+
+
 ## trimming reads 
 function trim_ad() {
     local fq1=$1
     local fq2=$2
-    local wk_dir=$3 # working directory
-    local clean_dir=${wk_dir}/data/clean_data
+    local out_dir=$3 # working directory
+    local clean_dir="${out_dir}/00.clean_data"
     # local raw_dir=$(dirname ${fq1})
-    # local clean_dir="${wk_dir}/data/clean_data"
     # hiseq trim -n 4 -a CTGTCTCTTATACACATCT -A AGATCGGAAGAGCGTCGTG -p ${N_CPU} -j 1 --cut-after-trim 7,-7 -m 20 -o ${clean_dir} -1 ${fq1} -2 ${fq2}
     hiseq trim --rm-polyN A --times 4 -p ${N_CPU} -p ${N_CPU} -m 20 -o ${clean_dir} -1 ${fq1} -2 ${fq2}
     # hiseq qc -i data/clean_data/${fq_name}/*gz -o ${clean_dir}/qc -p ${N_CPU} -j 1 -c fastqc
@@ -187,16 +273,28 @@ function run_salmon() {
 export -f run_salmon
 
 
-# para: <wk_dir> <fq1> <fq2>
-function run_rnaseq() {
-    local wk_dir=$1 # working directory
+# run pipeline for single pair of read1/2
+# para: <config> <fq1> <fq2>
+function run_rnaseq_fq() {
+    [[ $# -lt 3 ]] && echo "run_rnaseq_fq <config> <fq1> <fq2>" && return 1
+    #####################################################################
+    # Error-1. could not detect global variables.                       #
+    # in case, to use parallel for running multiple samples             #
+    # functions within paralle could not detect global variables.       #
+    #                                                                   #
+    # Solution. pass the config to this function                        #
+    #####################################################################
+    local config=$1  # for global variables
     local fq1=$2
     local fq2=$3
-    [[ $# -lt 3 ]] && echo "not enough args..." && return 1
     [[ ! -f ${fq1} ]] && echo "File not exists: ${fq1}" && return 1
     [[ ! -f ${fq2} ]] && echo "File not exists: ${fq2}" && return 1
-    wk_dir=$(realpath -s ${wk_dir}) # absolute path
-    local fq_name=$(basename ${fq1%_1.fq.gz})
+    ## global variables
+    load_config ${config} #
+    local out_dir=${WK_DIR}/results
+    ## global variables
+    local fq_name=$(fx_prefix ${fq1})
+    echo "!!!-B1" ${out_dir}, ${fq1}, ${fq2}
 
     ## 0. check env
     if [[ ! ${CONDA_DEFAULT_ENV} == "hiseq" ]] 
@@ -210,7 +308,7 @@ function run_rnaseq() {
     # read2: cut -7 (after trim)
     echo "[1/10] - trimming adapters"
     local raw_dir=$(dirname ${fq1})
-    local clean_dir="${wk_dir}/results/00.clean_data"
+    local clean_dir="${out_dir}/00.clean_data"
     ## hiseq trim -n 4 -a CTGTCTCTTATACACATCT -A AGATCGGAAGAGCGTCGTG -p ${N_CPU} -j 1 --cut-after-trim 7,-7 -m 20 -o ${clean_dir} -1 ${fq1} -2 ${fq2}
     hiseq trim --rm-polyN A --times 4 -p ${N_CPU} -j 1 -m 15 -o ${clean_dir} -1 ${fq1} -2 ${fq2}
     ## hiseq qc -i data/clean_data/${fq_name}/*gz -o ${clean_dir}/qc -p ${N_CPU} -j 1 -c fastqc
@@ -220,7 +318,7 @@ function run_rnaseq() {
 
     ## 2. align to genome, using STAR
     echo "[2/10] - mapping (STAR)"
-    local align_dir="${wk_dir}/results/01.align"
+    local align_dir="${out_dir}/01.align"
     local bam_star="${align_dir}/${fq_name}/${fq_name}.bam"
     [[ ! -f ${bam_star} ]] && \
         hiseq align -a STAR -o ${align_dir} --to-rRNA -p ${N_CPU} -j 1 -g ${GENOME} -1 ${clean_fq1} -2 ${clean_fq2}
@@ -228,7 +326,7 @@ function run_rnaseq() {
 
     ## 3. prepare bam files
     echo "[3/10] - copy bam files"
-    local bam_dir="${wk_dir}/results/02.bam_files"
+    local bam_dir="${out_dir}/02.bam_files"
     local bam="${bam_dir}/${fq_name}.bam"
     local bam_star_rel=$(realpath --relative-to=${bam_dir} $(dirname ${bam_star}))
     [[ ! -d ${bam_dir} ]] && mkdir -p ${bam_dir}
@@ -237,32 +335,32 @@ function run_rnaseq() {
 
     ## 4. prepare bw files
     echo "[4/10] - generating bigWig files"
-    local bw_dir="${wk_dir}/results/03.bw_files"
+    local bw_dir="${out_dir}/03.bw_files"
     bam2bw ${bw_dir} ${bam} ${GENOME}
 
     ## 5. annotation bam files
     echo "[5/10] - annotation (Picard)"
-    local anno_dir="${wk_dir}/results/04.anno/picard"
+    local anno_dir="${out_dir}/04.anno/picard"
     anno ${anno_dir} ${bam}
 
     ## 6. quant
     echo "[6/10] - quantifying sens,anti reads"
-    local quant_dir="${wk_dir}/results/05.quant"
+    local quant_dir="${out_dir}/05.quant"
     quant ${quant_dir} ${GENOME} ${bam}
 
     ## 7. genebody coverage
     echo "[7/10] - generating genebody coverage (RSeQC), skipped ..."
-    local gb_dir="${wk_dir}/results/06.genebody_cov"
+    local gb_dir="${out_dir}/06.genebody_cov"
     # bash ${GB_COV} ${gb_dir} ${GENOME} 1 ${bam}
 
     ## 8. quant, TPM, gene_count, salmon
     echo "[8/10] - mapping (Salmon)"
-    local salmon_dir="${wk_dir}/results/07.RNAseq_salmon"
+    local salmon_dir="${out_dir}/07.RNAseq_salmon"
     run_salmon ${salmon_dir} ${GENOME} ${clean_fq1} ${clean_fq2}
 
     ## 9. subsample: 0.1M to 1M reads by 0.2M step
     echo "[9/10] - subset reads by 0.1 to 1.0 M"
-    local sub_dir="${wk_dir}/results/08.sub_data"
+    local sub_dir="${out_dir}/08.sub_data"
     for i in 100000 200000 400000 600000 800000 1000000
     do
         i2=$(awk -v n=${i} 'BEGIN{printf "%02d",n/100000}') # fix name
@@ -278,10 +376,22 @@ function run_rnaseq() {
     
     echo "[10/10] - finished!"
 }
+export -f run_rnaseq_fq
+
+
+# run pipeline for multiple files
+# para: <out_dir> <data_dir>
+function run_rnaseq() {
+    [[ $# -lt 1 ]] && echo "run_rnaseq <config>" && return 1
+    echo "working on $$"
+    local config=$1
+    load_config ${config} # global variables
+    # list_config ${config} # init arguments, global variables
+    # tmp=$(check_data_dir "${DATA_DIR}") # check fq files
+    # [[ $? -ne 0 ]] && echo "[error] - fq files vaild" && return 1 # previous command failed
+    parallel -j ${N_JOB} --rpl '{/(.+?)/(.*?)} s/$$1/$$2/;' run_rnaseq_fq ${config} {} {/_1.fq/_2.fq} ::: ${DATA_DIR}/*1.fq.gz
+}
 export -f run_rnaseq
 
-
-[[ $# -lt 3 ]] && echo "bash run_rnaseq.sh <wk_dir> <fq1_1.fq.gz> <fq2_2.fq.gz>" && exit 1
-echo "working on $$"
-run_rnaseq $1 $2 $3
-
+# main
+run_rnaseq $@
