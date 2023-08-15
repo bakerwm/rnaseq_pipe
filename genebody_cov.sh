@@ -107,6 +107,7 @@ function check_env() {
 }
 export -f check_env
 
+
 # for single bam
 # para: <out_dir> <genome> <bam>
 function gbcov() {
@@ -144,7 +145,9 @@ function gbcov() {
     local out_txt="${prefix}.geneBodyCoverage.txt"
     local cmd="${prefix}.cmd.sh"
     local log="${prefix}.rseqc.log"
-    if [[ -f ${out_txt} ]] 
+    local n_lines=$()
+    [[ -f ${out_txt} ]] && n_lines=$(grep -c "^" ${out_txt}) || n_lines=0
+    if [[ -f ${out_txt} && ${n_lines} -gt 1 ]]
     then 
         echo "file exists: ${out_txt}"
     else
