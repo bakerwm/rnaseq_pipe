@@ -1,29 +1,77 @@
+#!/usr/bin/bash 
+
+# Script: rnaseq_gb2cov.sh
+# Author: Ming Wang
+# Version: 1.0
+# Email: wangm08@hotmail.com
+# Date: 2023-08-14
+#
+# Usage: rnaseq_gb2cov.sh <config.txt>
+
+# Why this script?
+# geneBody_coverage.py command from RSeQC takes much too long time. 2-7 housrs for 2-10 million reads
+#
+# How to:
+# 1. run rnaseq pipeline, except genebody_cov, using multiple threads for each file
+# 2. run this script alone, with single thread for each file
 
 
 ################################################################################
-# GLOBAL VARIABLES
-SLURM_PARTITION="CPU1"
-N_CPU=1  # --ntasks
-MEM=4000 # --mem MB
+SRC_DIR=$(dirname $0) # script dir
+GB_COV="${SRC_DIR}/genebody_cov.sh" # to-do
 ################################################################################
 
-## make slurm script
+# load all global variables
+# para: <config>
+function load_config() {
+    [[ -f $1 ]] || return 1
+    source $1 # config
+    # update resources
+    WK_DIR=$(realpath -s ${WK_DIR})
+    DATA_DIR=$(realpath -s ${DATA_DIR})
+    [[ ${N_CPU} =~ ^[0-9]+$ ]] || N_CPU=8
+    [[ ${N_JOB} =~ ^[0-9]+$ ]] || N_JOB=1
+    [[ ${N_MEM} =~ ^[0-9]+$ ]] || N_MEM=30000 # MB, 30GB for Salmon,STAR alignment of hg38
+    ## force
+    N_CPU=1 #
+    N_MEM=4000 #
+}
+export -f load_config
+
+
+# check bam files in rnaseq project
+# para: <bam_dir>
+function check_bam_dir() {
+    local bam_dir=$1
+    local n_bam=$(ls ${bam_dir}/ | grep -c ".bam$") #
+    if [[ ${n_bam} -ne 0 ]] 
+    then
+        echo "[${n_bam}] bam files found: ${bam_dir}" && return 0 # pass
+    else
+        echo "[0] no bam files found: ${bam_dir}" && return 1
+    fi
+}
+export -f check_bam_dir
+
+
+# run RNAseq_gb2cov to SLURM (HPC)
+# para: <bam_list>
 function make_slurm() {
-    local wk_dir=$1
-    local bam=$2
-    [[ $# -lt 2 ]] && echo "not enough args..." && return 1
-    wk_dir=$(realpath -s ${wk_dir})
-    bam=$(realpath -s ${bam})
-    ## check run_pipe.sh
-    gb2cov="${HOME}/biosoft/run_rnaseq/genebody_cov.sh"
-    [[ ! -f ${gb2cov} ]] && echo "genebody_cov.sh not exists" && return 1
+    [[ $# -lt 1 ]] && echo "Usage: make_slurm <bam1> [bam2, ... bamN]" && return 1
+    local bam_list="$@"
+    local slurm_file="${WK_DIR}/run_rnaseq_gb2cov_slurm.sh"
+    local out_dir="${WK_DIR}/results/06.genebody_cov"
+    [[ ! -d ${out_dir} ]] && mkdir -p ${out_dir}
+    # determine the total CPU/mem values
+    local sum_CPU=$(echo ${N_CPU} ${N_JOB} | awk '{print $1*$2}')
+    local sum_MEM=$(echo ${N_MEM} ${N_JOB} | awk '{print $1*$2}')
 
-    cat << EOF
+    cat << EOF > ${slurm_file}
 #!/bin/bash
 #SBATCH --job-name=gb2cov        # create a short name for your job
 #SBATCH --partition=${SLURM_PARTITION}         # node name
-#SBATCH --ntasks=${N_CPU}               # total cores, 
-#SBATCH --mem=${MEM}              # 30GB for STAR
+#SBATCH --ntasks=${sum_CPU}               # total cores, 
+#SBATCH --mem=${N_MEM}              # 30GB for STAR
 #SBATCH --cpus-per-task=1        # cpu-cores per task (>1 if multi-threaded tasks)
 #SBATCH --time=5-01:00:00        # total run time limit (D-HH:MM:SS)
 #SBATCH --output=log.${SLURM_PARTITION}.%j.out
@@ -33,50 +81,59 @@ module purge
 source "/home/wangm/miniconda3/etc/profile.d/conda.sh"
 conda activate hiseq
 
-cd ${wk_dir}
-# bash ${gb2cov} ${wk_dir}/results/genebody_cov hg38 1 ${bam}
-bash ${gb2cov} ${wk_dir}/results/06.genebody_cov hg38 1 ${bam}
-
+cd ${WK_DIR}
+bash ${GB_COV} ${out_dir} ${GENOME} ${N_JOB} "${bam_list}"
 EOF
+    # output
+    echo ${slurm_file}
 }
 export -f make_slurm 
 
 
-function make_slurm_sh() {
-    local wk_dir=$1
-    local bam=$2
-    [[ $# -lt 2 ]] && echo "missing args" && return 1
-    local fname=$(basename ${bam%.bam})
-    local job_dir=${wk_dir}/jobs
-    [[ ! -d ${job_dir} ]] && mkdir -p ${job_dir}
-    local job_file="${job_dir}/submit_${fname}_slurm.sh"
-    # sbatch run_slurm.sh ${fq1}
-    make_slurm ${wk_dir} ${bam} > ${job_file}
-    echo ${job_file}    
+# run RNAseq_gb2cov from terminal local, directly
+# para: <bam_list>
+function make_local() {
+    [[ $# -lt 1 ]] && echo "Usage: make_local <bam1> [bam2, ... bamN]" && return 1
+    local bam_list="$@"
+    local cmd_file="${WK_DIR}/run_rnaseq_gb2cov_local.sh"
+    local out_dir="${WK_DIR}/results/06.genebody_cov"
+    [[ ! -d ${out_dir} ]] && mkdir -p ${out_dir}
+    echo "source $HOME/miniconda3/etc/profile.d/conda.sh" > ${cmd_file}
+    echo "conda activate hiseq" >> ${cmd_file}
+    echo "cd ${WK_DIR}" >> ${cmd_file}
+    echo bash ${GB_COV} ${out_dir} ${GENOME} ${N_JOB} "${bam_list}" >> ${cmd_file}
+    echo ${cmd_file}
 }
-export -f make_slurm_sh
+export -f make_local
 
 
-function run_gb2cov() {
-    [[ $# -lt 3 ]] && echo "Usage: run_gb2cov.sh <wk_dir> <bam_dir> <0|1>" && return 1
-    local wk_dir=$1
-    local bam_dir=$2
-    local run=$3 # 0|1
-    ##
-    for bam in ${bam_dir}/*.bam
-    do
-        [[ ! -f ${bam} ]] && continue
-        ## create job ##
-        job_file=$(make_slurm_sh ${wk_dir} ${bam})
-        ## status ##
-        [[ $(grep -ci SBATCH ${job_file}) -gt 4 ]] && flag="ok" || flag="failed"
-        [[ ${run} == 1 ]] && ss="yes" || ss="no"
-        printf "%8s: %-4s %8s: %-4s : %s\n" "file" ${flag} "submit" ${ss} $(basename ${job_file})
-        ## submit ##
-        [[ ${run} == 1 && ${flag} == "ok" ]] && sbatch ${job_file}
-    done
+function rnaseq_gb2cov() {
+    [[ $# -lt 2 ]] && echo "Usage: run_gb2cov <config> <run:0|1>" && return 1
+    local config=$1
+    local run=$2 # 0=not, 1=run
+    load_config ${config} # global variables
+    local bam_dir="${WK_DIR}/results/02.bam_files"
+    check_bam_dir ${bam_dir} # global variables
+    local bam_list=$(ls ${bam_dir}/ | grep ".bam$" | xargs)
+    [[ $? -ne 0 ]] && echo "[error] - bam files not vaild: ${WK_DIR}/02.bam_files/" && return 1 # previous command failed
+    # prepare and run jobs
+    [[ ${run} == 1 ]] && run_flag="yes" || run_flag="no" #
+    if [[ -z $(sinfo -h -p ${SLURM_PARTITION}) ]] # global variables
+    then
+        # run on local server
+        local cmd_file=$(make_local "${bam_list}")
+        [[ $(grep -ci run_rnaseq.sh ${cmd_file}) -gt 0 ]] && job_flag="ok" || job_flag="failed"
+        printf "%8s: %-4s %8s: %-4s : %s\n" "file" ${job_flag} "run" ${run_flag} $(basename ${cmd_file})
+        [[ ${run} == 1 && ${job_flag} == "ok" ]] && bash ${cmd_file}
+    else
+        # run on HPC SLURM
+        local slurm_file=$(make_slurm "${bam_list}")
+        [[ $(grep -ci SBATCH ${slurm_file}) -gt 4 ]] && job_flag="ok" || job_flag="failed"
+        printf "%8s: %-4s %8s: %-4s : %s\n" "file" ${job_flag} "run" ${run_flag} $(basename ${slurm_file})
+        [[ ${run} == 1 && ${job_flag} == "ok" ]] && sbatch ${slurm_file}
+    fi
 }
-export -f run_gb2cov
+export -f rnaseq_gb2cov
 
-# [[ $# -lt 3 ]] && echo "Usage: run_gb2cov.sh <wk_dir> <bam_dir> <0|1>" && exit 1
-run_gb2cov $@
+
+rnaseq_gb2cov $@
