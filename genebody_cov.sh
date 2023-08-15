@@ -176,3 +176,5 @@ export -f gbcovx
 gbcovx $@
 # echo 'genebody_coverage.py --help'
 
+## to-do
+## support: both config, or specific arguments

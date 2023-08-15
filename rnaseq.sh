@@ -153,7 +153,7 @@ export -f make_slurm
 
 
 # run RNAseq from terminal local, directly
-# GLOBAL VARIABLES: WK_DIR, DATA_DIR, RNAseq_SH1, RNAseq_SH2
+# GLOBAL VARIABLES: WK_DIR, DATA_DIR, RNAseq_SH1, RNAseq_SH
 # para: <config>
 function make_local() {
     [[ $# -lt 1 ]] && echo "Usage: make_local <config>" && return 1
@@ -187,7 +187,7 @@ function rnaseq() {
         local cmd_file=$(make_local ${config})
         [[ $(grep -ci run_rnaseq.sh ${cmd_file}) -gt 0 ]] && job_flag="ok" || job_flag="failed"
         printf "%8s: %-4s %8s: %-4s : %s\n" "file" ${job_flag} "run" ${run_flag} $(basename ${cmd_file})
-        # [[ ${run} == 1 && ${job_flag} == "ok" ]] && bash ${cmd_file}
+        [[ ${run} == 1 && ${job_flag} == "ok" ]] && bash ${cmd_file}
     else
         # run on HPC SLURM
         local slurm_file=$(make_slurm ${config})
