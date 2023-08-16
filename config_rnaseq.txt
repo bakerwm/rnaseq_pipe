@@ -12,6 +12,7 @@ GENOME=hg38 # mm10, hg38, dm6
 BIN_SIZE=50 # for bigWig files
 NORM_BY="CPM" # for bigWig
 GENOME_DIR="${HOME}/data/genome"
+SCRIPT_DIR="${HOME}/biosoft/run_rnaseq"
 
 # Suggest config on IBP-HPC
 # CPU1 N_CPU=6 N_JOB=6 N_MEM=30000 (36C 190G)
