@@ -82,7 +82,7 @@ source "/home/wangm/miniconda3/etc/profile.d/conda.sh"
 conda activate hiseq
 
 cd ${WK_DIR}
-bash ${GB_COV} ${out_dir} ${GENOME} ${N_JOB} "${bam_list}"
+bash ${GB_COV} ${out_dir} ${GENOME} ${N_JOB} ${bam_list}
 EOF
     # output
     echo ${slurm_file}
@@ -114,8 +114,8 @@ function rnaseq_gb2cov() {
     load_config ${config} # global variables
     local bam_dir="${WK_DIR}/results/02.bam_files"
     check_bam_dir ${bam_dir} # global variables
-    local bam_list=$(ls ${bam_dir}/ | grep ".bam$" | xargs)
     [[ $? -ne 0 ]] && echo "[error] - bam files not vaild: ${WK_DIR}/02.bam_files/" && return 1 # previous command failed
+    local bam_list=$(ls ${bam_dir}/*bam | xargs)
     # prepare and run jobs
     [[ ${run} == 1 ]] && run_flag="yes" || run_flag="no" #
     if [[ -z $(sinfo -h -p ${SLURM_PARTITION}) ]] # global variables
