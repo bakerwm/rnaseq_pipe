@@ -17,6 +17,50 @@ GB_COV="${SRC_DIR}/genebody_cov.sh" # to-do
 ################################################################################
 
 
+# load all global variables
+# para: <config>
+function load_config() {
+    [[ -f $1 ]] || return 1
+    source $1 # config
+    # update resources
+    WK_DIR=$(realpath -s ${WK_DIR})
+    DATA_DIR=$(realpath -s ${DATA_DIR})
+    N_FQ=$(ls ${DATA_DIR}/ | grep -c _1.fq) #
+    [[ ${N_CPU} =~ ^[0-9]+$ ]] || N_CPU=8
+    [[ ${N_JOB} =~ ^[0-9]+$ ]] || N_JOB=1
+    [[ ${N_MEM} =~ ^[0-9]+$ ]] || N_MEM=30000 # MB, 30GB for Salmon,STAR alignment of hg38
+}
+export -f load_config
+
+
+# list config, global variables
+# para: <>
+function list_config() {
+    # number of fastq files
+    N_FQ=$(ls ${DATA_DIR}/ | grep -c _1.fq) #
+    # show global variables:
+    echo "--------------------------------------------------------------------------------"
+    echo "WK_DIR           : ${WK_DIR}"
+    echo "DATA_DIR         : ${DATA_DIR}"
+    echo "GENOME           : ${GENOME}"
+    echo "GENOME_DIR       : ${GENOME_DIR}"
+    echo "BIN_SIZE         : ${BIN_SIZE}"
+    echo "NORM_BY          : ${NORM_BY}"
+    echo "N_CPU            : ${N_CPU}"
+    echo "N_JOB            : ${N_JOB}"
+    echo "N_MEM (MB)       : ${N_MEM}"
+    echo "slurm_partition  : ${SLURM_PARTITION}"
+    echo "SCRIPT_DIR       : ${SCRIPT_DIR}"
+    echo "run_rnaseq.sh    : ${RNAseq_SH}"
+    echo "run_salmon.sh    : ${RUN_SALMON}"
+    echo "genebody_cov.sh  : ${GB_COV}"
+    echo "N_fastq_files    : ${N_FQ}"
+    echo "--------------------------------------------------------------------------------"
+    echo ""
+}
+export -f list_config
+
+
 # check fastq files in data_dir
 # para: <data_dir>
 function check_data_dir() {
@@ -48,49 +92,6 @@ function check_data_dir() {
 export -f check_data_dir
 
 
-# load all global variables
-# para: <config>
-function load_config() {
-    [[ -f $1 ]] || return 1
-    source $1 # config
-    # update resources
-    WK_DIR=$(realpath -s ${WK_DIR})
-    DATA_DIR=$(realpath -s ${DATA_DIR})
-    [[ ${N_CPU} =~ ^[0-9]+$ ]] || N_CPU=8
-    [[ ${N_JOB} =~ ^[0-9]+$ ]] || N_JOB=1
-    [[ ${N_MEM} =~ ^[0-9]+$ ]] || N_MEM=30000 # MB, 30GB for Salmon,STAR alignment of hg38
-}
-export -f load_config
-
-
-# list config, global variables
-# para: <>
-function list_config() {
-    # number of fastq files
-    N_FQ=$(ls ${DATA_DIR}/ | grep -c _1.fq) #
-    # show global variables:
-    echo "--------------------------------------------------------------------------------"
-    echo "WK_DIR:          ${WK_DIR}"
-    echo "DATA_DIR:        ${DATA_DIR}"
-    echo "GENOME:          ${GENOME}"
-    echo "GENOME_DIR:      ${GENOME_DIR}"
-    echo "BIN_SIZE:        ${BIN_SIZE}"
-    echo "NORM_BY:         ${NORM_BY}"
-    echo "N_CPU:           ${N_CPU}"
-    echo "N_JOB:           ${N_JOB}"
-    echo "N_MEM (MB):      ${N_MEM}"
-    echo "slurm_partition: ${SLURM_PARTITION}"
-    echo "n fastq files:   ${N_FQ}"
-    echo ">> scripts <<"
-    echo "run_rnaseq.sh    : ${RNAseq_SH}"
-    echo "run_salmon.sh    : ${RUN_SALMON}"
-    echo "genebody_cov.sh  : ${GB_COV}"
-    echo "--------------------------------------------------------------------------------"
-    echo ""
-}
-export -f list_config
-
-
 # get prefix of fastq file
 # para: <file>
 function fx_prefix() {
@@ -118,7 +119,7 @@ export -f slurm_info
 
 # make slurm script for rnaseq analysis
 # GLOBAL VARIABLES: SLURM_PARTITION, N_CPU, N_MEM, RNAseq_SH2
-# para: <wk_dir> <data_dir>
+# para: <config>
 function make_slurm() {
     [[ $# -lt 1 ]] && echo "Usage: make_slurm <config>" && return 1
     local config=$(realpath -s $1)
@@ -176,7 +177,7 @@ function rnaseq() {
     local config=$1
     local run=$2 # 0=not, 1=run
     load_config ${config} # global variables
-    list_config ${config} # init arguments, global variables
+    # list_config ${config} # init arguments, global variables
     check_data_dir "${DATA_DIR}" # global variables
     [[ $? -ne 0 ]] && echo "[error] - fq files vaild" && return 1 # previous command failed
     # prepare and run jobs
