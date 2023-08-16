@@ -5,9 +5,15 @@
 #
 # Date: 2023-03-18
 
-N_CPU=8
+################################################################################
+# GLOBAL VARIABLES
 # salmon="/home/wangm/biosoft/salmon/current/bin/salmon"
 salmon="/data1/yuyang/wangm/biosoft/salmon/current/bin/salmon"
+################################################################################
+
+
+# get the salmon index
+# para: <genome>
 function get_index() {
     # gdir="/data/yulab/wangming/data/genome/"
     gdir="${HOME}/data/genome"
@@ -23,6 +29,8 @@ function get_index() {
 export -f get_index
 
 
+# prepare tx2gene Rscript
+# para: <>
 function tx2gene_R() {
     # convert transcript level to gene level
     # using scripts
@@ -68,6 +76,8 @@ EOF
 export -f tx2gene_R
 
 
+# get fastq name
+# para: <file>
 function fx_prefix() {
     local fq=$1    
     # local prefix="$(basename ${fq/.gz})"
@@ -77,13 +87,17 @@ function fx_prefix() {
 export -f fx_prefix
 
 
-# prepare working directory
-# genome, out_dir, fq1, fq2
+# run salmon alignment
+# para: <out_dir> <genome> <fq1> <fq2> [n_cpu:4]
 function run_salmon() {
+    [[ $# -lt 4 ]] && echo "Usage: run_salmon.sh <out_dir> <genome> <fq1> <fq2> [n_cpu:4]" && return 1
     local out_dir=$1
     local genome=$2
     local fq1=$3
     local fq2=$4
+    local n_cpu=$5
+    [[ -z $5 ]] && n_cpu=4 # default value
+    [[ ${n_cpu} =~ ^[0-9]+$ ]] || n_cpu=4 # default value
     [[ ! -f ${fq1} ]] && echo "fq1 not exists: ${fq1}" && return 1
     [[ ! -f ${fq2} ]] && echo "fq2 not exists: ${fq2}" && return 1
     [[ ${fq1} == ${fq2} ]] && fq2="" # for single-end
@@ -103,10 +117,10 @@ function run_salmon() {
     else
         if [[ -f ${fq2} ]] ; then
             # Paired-end mode
-            ${salmon} quant --gcBias --validateMappings -l A -p ${N_CPU} -i ${idx} -o ${smp_dir} -1 ${fq1} -2 ${fq2} 2> ${log}
+            ${salmon} quant --gcBias --validateMappings -l A -p ${n_cpu} -i ${idx} -o ${smp_dir} -1 ${fq1} -2 ${fq2} 2> ${log}
         else
             # Single-end mode
-            ${salmon} quant --gcBias --validateMappings -l A -p ${N_CPU} -i ${idx} -o ${smp_dir} -r ${fq1} 2> ${log}
+            ${salmon} quant --gcBias --validateMappings -l A -p ${n_cpu} -i ${idx} -o ${smp_dir} -r ${fq1} 2> ${log}
         fi
     fi
     # 2. run tx2gene 
@@ -128,5 +142,4 @@ function run_salmon() {
 export -f run_salmon
 
 
-[[ $# -lt 3 ]] && echo "Usage: run_salmon.sh <out_dir> <genome> <fq1> <fq2>" && exit 1
-run_salmon $1 $2 $3 $4
+run_salmon $@
