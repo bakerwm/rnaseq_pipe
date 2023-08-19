@@ -337,8 +337,8 @@ function align_salmon() {
     [[ ! -d ${out_dir} ]] && mkdir -p ${out_dir}
     local fname=$(fx_prefix ${fq1})
     local cmd="${out_dir}/${fname}.cmd.sh"
-    local log_out="${out_dir}/${fname}.slamon.stdout"
-    local log_err="${out_dir}/${fname}.slamon.stderr"
+    local log_out="${out_dir}/${fname}.salmon.stdout"
+    local log_err="${out_dir}/${fname}.salmon.stderr"
     local quant_sf="${out_dir}/${fname}/quant.sf"
     [[ -f ${quant_sf} ]] && tag_sf="# " || tag_sf=""
     echo "${tag_sf}bash ${run_salmon} ${out_dir} ${genome} ${fq1} ${fq2} ${n_cpu} \
